@@ -11,35 +11,54 @@ func main() {
 		printHelp()
 		return
 	}
-	wallet := NewWallet("config.json")
+	wallet, err := NewWallet("config.json")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing wallet: %v\n", err)
+		os.Exit(1)
+	}
 
 	switch os.Args[1] {
 	case "create":
-		wallet.CreateWallet()
+		if err := wallet.CreateWallet(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating wallet: %v\n", err)
+			os.Exit(1)
+		}
 	case "balance":
 		address := ""
 		if len(os.Args) > 2 {
 			address = os.Args[2]
 		}
-		wallet.CheckBalance(address)
+		if err := wallet.CheckBalance(address); err != nil {
+			fmt.Fprintf(os.Stderr, "Error checking balance: %v\n", err)
+			os.Exit(1)
+		}
 	case "last":
 		address := ""
 		if len(os.Args) > 2 {
 			address = os.Args[2]
 		}
-		wallet.LastTransactions(address)
+		if err := wallet.LastTransactions(address); err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting transactions: %v\n", err)
+			os.Exit(1)
+		}
 	case "status":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: status <txHash>")
 			return
 		}
-		wallet.TransactionStatus(os.Args[2])
+		if err := wallet.TransactionStatus(os.Args[2]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting status: %v\n", err)
+			os.Exit(1)
+		}
 	case "send":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: send <recipient> <amount>")
 			return
 		}
-		wallet.SendUSDT(os.Args[2], os.Args[3])
+		if err := wallet.SendUSDT(os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error sending USDT: %v\n", err)
+			os.Exit(1)
+		}
 	case "encrypt-key":
 		EncryptKeyPrompt()
 	case "info":

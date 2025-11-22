@@ -43,88 +43,87 @@ type Wallet struct {
 	cfg *Config
 }
 
-func NewWallet(json string) *Wallet {
+func NewWallet(json string) (*Wallet, error) {
 	cfg, err := LoadConfig(json)
 	if err != nil {
-		fmt.Println("Failed to load config:", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	return &Wallet{cfg: cfg}
+	return &Wallet{cfg: cfg}, nil
 }
 
-func getClient(key string) *ethclient.Client {
+func getClient(key string) (*ethclient.Client, error) {
 	providerURL := "https://mainnet.infura.io/v3/" + key
 	client, err := ethclient.Dial(providerURL)
 	if err != nil {
-		fmt.Println("Error connecting to Ethereum:", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("error connecting to Ethereum: %w", err)
 	}
-	return client
+	return client, nil
 }
 
-func getUSDTABI() abi.ABI {
+func getUSDTABI() (abi.ABI, error) {
 	abiBytes, err := os.ReadFile(usdtABIPath)
 	if err != nil {
-		fmt.Println("Error reading ABI:", err)
-		os.Exit(1)
+		return abi.ABI{}, fmt.Errorf("error reading ABI: %w", err)
 	}
 	usdtABI, err := abi.JSON(strings.NewReader(string(abiBytes)))
 	if err != nil {
-		fmt.Println("Error parsing ABI:", err)
-		os.Exit(1)
+		return abi.ABI{}, fmt.Errorf("error parsing ABI: %w", err)
 	}
-	return usdtABI
+	return usdtABI, nil
 }
 
-func (w *Wallet) CreateWallet() {
+func (w *Wallet) CreateWallet() error {
 	privateKey, err := crypto.GenerateKey()
 	if err != nil {
-		fmt.Println("Error:", err)
-		return
+		return fmt.Errorf("error generating key: %w", err)
 	}
 	address := crypto.PubkeyToAddress(privateKey.PublicKey)
 	fmt.Printf("New Wallet:\nAddress: %s\nPrivate Key: %x\n", address.Hex(), crypto.FromECDSA(privateKey))
+	return nil
 }
-func (w *Wallet) CheckBalance(address string) {
+func (w *Wallet) CheckBalance(address string) error {
 	if address == "" {
 		address = w.cfg.WALLET
 	}
 	fmt.Println("Balance for: ", address)
-	client := getClient(w.cfg.INFURA_API_KEY)
+	client, err := getClient(w.cfg.INFURA_API_KEY)
+	if err != nil {
+		return err
+	}
 	defer client.Close()
 
 	if !common.IsHexAddress(address) {
-		fmt.Println("Invalid Ethereum address:", address)
-		return
+		return fmt.Errorf("invalid Ethereum address: %s", address)
 	}
 	addr := common.HexToAddress(address)
 
 	// ETH Balance
 	ethBalance, err := client.BalanceAt(context.Background(), addr, nil)
 	if err != nil {
-		fmt.Println("Error getting ETH balance:", err)
-		return
+		return fmt.Errorf("error getting ETH balance: %w", err)
 	}
 	fmt.Printf("ETH Balance: %s (%s)\n", weiToEther(ethBalance), address)
 
 	// USDT Balance
-	usdtABI := getUSDTABI()
+	usdtABI, err := getUSDTABI()
+	if err != nil {
+		return err
+	}
 	usdtAddress := w.cfg.USDT_CONTRACT
 	contractAddr := common.HexToAddress(usdtAddress)
 	data, err := usdtABI.Pack("balanceOf", addr)
 	if err != nil {
-		fmt.Println("Error packing balanceOf:", err)
-		return
+		return fmt.Errorf("error packing balanceOf: %w", err)
 	}
 	callMsg := ethereum.CallMsg{To: &contractAddr, Data: data}
 	res, err := client.CallContract(context.Background(), callMsg, nil)
 	if err != nil {
-		fmt.Println("Error calling contract:", err)
-		return
+		return fmt.Errorf("error calling contract: %w", err)
 	}
 	balance := new(big.Int).SetBytes(res)
 	decimals := getUSDTDecimals(client, usdtABI, contractAddr)
 	fmt.Printf("USDT Balance: %s (%s)\n", formatTokenAmount(balance, decimals), address)
+	return nil
 }
 
 func weiToEther(wei *big.Int) string {
@@ -153,10 +152,16 @@ func formatTokenAmount(amount *big.Int, decimals int64) string {
 	val := new(big.Float).Quo(f, div)
 	return val.Text('f', 6)
 }
-func (w *Wallet) LastTransactions(address string) {
-	client := getClient(w.cfg.INFURA_API_KEY)
+func (w *Wallet) LastTransactions(address string) error {
+	client, err := getClient(w.cfg.INFURA_API_KEY)
+	if err != nil {
+		return err
+	}
 	defer client.Close()
-	usdtABI := getUSDTABI()
+	usdtABI, err := getUSDTABI()
+	if err != nil {
+		return err
+	}
 	usdtAddress := w.cfg.USDT_CONTRACT
 	contractAddr := common.HexToAddress(usdtAddress)
 	addr := common.HexToAddress(address)
@@ -164,8 +169,7 @@ func (w *Wallet) LastTransactions(address string) {
 	// Get latest block
 	latestBlock, err := client.BlockNumber(context.Background())
 	if err != nil {
-		fmt.Println("Error getting latest block:", err)
-		return
+		return fmt.Errorf("error getting latest block: %w", err)
 	}
 	fromBlock := big.NewInt(0)
 	if latestBlock > 5000 {
@@ -183,8 +187,7 @@ func (w *Wallet) LastTransactions(address string) {
 	}
 	logs, err := client.FilterLogs(context.Background(), query)
 	if err != nil {
-		fmt.Println("Error fetching logs:", err)
-		return
+		return fmt.Errorf("error fetching logs: %w", err)
 	}
 	decimals := getUSDTDecimals(client, usdtABI, contractAddr)
 	var txs []types.Log
@@ -201,7 +204,7 @@ func (w *Wallet) LastTransactions(address string) {
 	n := len(txs)
 	if n == 0 {
 		fmt.Println("No recent USDT transactions found for this address.")
-		return
+		return nil
 	}
 	for i := n - 1; i >= 0 && i >= n-3; i-- {
 		tx := txs[i]
@@ -209,35 +212,43 @@ func (w *Wallet) LastTransactions(address string) {
 		fmt.Printf("#%d: Hash: %s\n  From: %s\n  To: %s\n  Value: %s USDT\n  Block: %d\n",
 			n-i, tx.TxHash.Hex(), tx.Topics[1].Hex(), tx.Topics[2].Hex(), formatTokenAmount(val, decimals), tx.BlockNumber)
 	}
+	return nil
 }
-func (w *Wallet) TransactionStatus(txHash string) {
-	client := getClient(w.cfg.INFURA_API_KEY)
+func (w *Wallet) TransactionStatus(txHash string) error {
+	client, err := getClient(w.cfg.INFURA_API_KEY)
+	if err != nil {
+		return err
+	}
 	defer client.Close()
 	hash := common.HexToHash(txHash)
 	receipt, err := client.TransactionReceipt(context.Background(), hash)
 	if err != nil {
-		fmt.Println("Transaction not found or not yet mined.")
-		return
+		return fmt.Errorf("transaction not found or not yet mined")
 	}
 	fmt.Printf("Status: %v\nBlock: %d\nGas Used: %d\n", receipt.Status == 1, receipt.BlockNumber.Uint64(), receipt.GasUsed)
+	return nil
 }
 
-func (w *Wallet) SendUSDT(recipient string, amountString string) {
+func (w *Wallet) SendUSDT(recipient string, amountString string) error {
 	amount, err := strconv.ParseFloat(amountString, 64)
 	if err != nil {
-		fmt.Println("Invalid amount:", err)
-		return
+		return fmt.Errorf("invalid amount: %w", err)
 	}
 	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
 	if err != nil {
-		fmt.Println("Failed to decrypt:", err)
-		return
+		return fmt.Errorf("failed to decrypt: %w", err)
 	}
 	defer zeroBytes(privKeyBytes)
 
-	client := getClient(w.cfg.INFURA_API_KEY)
+	client, err := getClient(w.cfg.INFURA_API_KEY)
+	if err != nil {
+		return err
+	}
 	defer client.Close()
-	usdtABI := getUSDTABI()
+	usdtABI, err := getUSDTABI()
+	if err != nil {
+		return err
+	}
 	usdtAddress := w.cfg.USDT_CONTRACT
 	contractAddr := common.HexToAddress(usdtAddress)
 
@@ -246,21 +257,18 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) {
 	rawKey := make([]byte, hex.DecodedLen(len(trimmed)))
 	_, err = hex.Decode(rawKey, trimmed)
 	if err != nil {
-		fmt.Println("Invalid private key hex:", err)
-		return
+		return fmt.Errorf("invalid private key hex: %w", err)
 	}
 	defer zeroBytes(rawKey)
 
 	privateKey, err := crypto.ToECDSA(rawKey)
 	if err != nil {
-		fmt.Println("Invalid private key:", err)
-		return
+		return fmt.Errorf("invalid private key: %w", err)
 	}
 	fromAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
 	nonce, err := client.PendingNonceAt(context.Background(), fromAddr)
 	if err != nil {
-		fmt.Println("Error getting nonce:", err)
-		return
+		return fmt.Errorf("error getting nonce: %w", err)
 	}
 	decimals := getUSDTDecimals(client, usdtABI, contractAddr)
 	rawAmount := new(big.Float).Mul(big.NewFloat(amount), big.NewFloat(float64Pow(10, decimals)))
@@ -268,8 +276,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) {
 	rawAmount.Int(amt)
 	auth := bind.NewKeyedTransactor(privateKey, big.NewInt(1))
 	if err != nil {
-		fmt.Println("Error creating transactor:", err)
-		return
+		return fmt.Errorf("error creating transactor: %w", err)
 	}
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Value = big.NewInt(0)
@@ -279,8 +286,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) {
 
 	input, err := usdtABI.Pack("transfer", common.HexToAddress(recipient), amt)
 	if err != nil {
-		fmt.Println("Error packing transfer:", err)
-		return
+		return fmt.Errorf("error packing transfer: %w", err)
 	}
 	// Estimate gas
 	msg := ethereum.CallMsg{
@@ -293,8 +299,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) {
 	}
 	gasEstimate, err := client.EstimateGas(context.Background(), msg)
 	if err != nil {
-		fmt.Println("Error estimating gas:", err)
-		return
+		return fmt.Errorf("error estimating gas: %w", err)
 	}
 	fmt.Printf("Estimated Gas: %d\n", gasEstimate)
 	auth.GasLimit = gasEstimate
@@ -302,15 +307,14 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) {
 	tx := types.NewTransaction(nonce, contractAddr, big.NewInt(0), auth.GasLimit, auth.GasPrice, input)
 	signedTx, err := auth.Signer(fromAddr, tx)
 	if err != nil {
-		fmt.Println("Error signing tx:", err)
-		return
+		return fmt.Errorf("error signing tx: %w", err)
 	}
 	err = client.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		fmt.Println("Error sending tx:", err)
-		return
+		return fmt.Errorf("error sending tx: %w", err)
 	}
 	fmt.Printf("Transaction sent! Tx Hash: %s\n", signedTx.Hash().Hex())
+	return nil
 }
 func float64Pow(a float64, b int64) float64 {
 	res := 1.0
