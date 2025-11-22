@@ -41,7 +41,7 @@ func TestCheckBalance(t *testing.T) {
 
 	// We need to capture stdout to verify output, but for now let's just ensure no error
 	// and we can rely on the fact that it calls the mock.
-	err := w.CheckBalance("0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
+	err := w.CheckBalance(context.Background(), "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
 	if err != nil {
 		t.Errorf("CheckBalance failed: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestLastTransactions(t *testing.T) {
 
 	w, _ := NewWallet(cfg, mockClient)
 
-	err := w.LastTransactions("0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
+	err := w.LastTransactions(context.Background(), "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
 	if err != nil {
 		t.Errorf("LastTransactions failed: %v", err)
 	}

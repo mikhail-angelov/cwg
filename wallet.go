@@ -72,7 +72,7 @@ func (w *Wallet) CreateWallet() error {
 	fmt.Printf("New Wallet:\nAddress: %s\nPrivate Key: %x\n", address.Hex(), crypto.FromECDSA(privateKey))
 	return nil
 }
-func (w *Wallet) CheckBalance(address string) error {
+func (w *Wallet) CheckBalance(ctx context.Context, address string) error {
 	if address == "" {
 		address = w.cfg.WALLET
 	}
@@ -85,7 +85,7 @@ func (w *Wallet) CheckBalance(address string) error {
 	addr := common.HexToAddress(address)
 
 	// ETH Balance
-	ethBalance, err := client.BalanceAt(context.Background(), addr, nil)
+	ethBalance, err := client.BalanceAt(ctx, addr, nil)
 	if err != nil {
 		return fmt.Errorf("error getting ETH balance: %w", err)
 	}
@@ -103,12 +103,12 @@ func (w *Wallet) CheckBalance(address string) error {
 		return fmt.Errorf("error packing balanceOf: %w", err)
 	}
 	callMsg := ethereum.CallMsg{To: &contractAddr, Data: data}
-	res, err := client.CallContract(context.Background(), callMsg, nil)
+	res, err := client.CallContract(ctx, callMsg, nil)
 	if err != nil {
 		return fmt.Errorf("error calling contract: %w", err)
 	}
 	balance := new(big.Int).SetBytes(res)
-	decimals := getUSDTDecimals(client, usdtABI, contractAddr)
+	decimals := getUSDTDecimals(ctx, client, usdtABI, contractAddr)
 	fmt.Printf("USDT Balance: %s (%s)\n", formatTokenAmount(balance, decimals), address)
 	return nil
 }
@@ -119,10 +119,10 @@ func weiToEther(wei *big.Int) string {
 	return ethValue.Text('f', 6)
 }
 
-func getUSDTDecimals(client Client, usdtABI abi.ABI, contractAddr common.Address) int64 {
+func getUSDTDecimals(ctx context.Context, client Client, usdtABI abi.ABI, contractAddr common.Address) int64 {
 	data, _ := usdtABI.Pack("decimals")
 	callMsg := ethereum.CallMsg{To: &contractAddr, Data: data}
-	res, err := client.CallContract(context.Background(), callMsg, nil)
+	res, err := client.CallContract(ctx, callMsg, nil)
 	if err != nil {
 		return 6 // fallback
 	}
@@ -139,7 +139,7 @@ func formatTokenAmount(amount *big.Int, decimals int64) string {
 	val := new(big.Float).Quo(f, div)
 	return val.Text('f', 6)
 }
-func (w *Wallet) LastTransactions(address string) error {
+func (w *Wallet) LastTransactions(ctx context.Context, address string) error {
 	client := w.client
 	usdtABI, err := getUSDTABI()
 	if err != nil {
@@ -150,7 +150,7 @@ func (w *Wallet) LastTransactions(address string) error {
 	addr := common.HexToAddress(address)
 
 	// Get latest block
-	latestBlock, err := client.BlockNumber(context.Background())
+	latestBlock, err := client.BlockNumber(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting latest block: %w", err)
 	}
@@ -168,11 +168,11 @@ func (w *Wallet) LastTransactions(address string) error {
 		Addresses: []common.Address{contractAddr},
 		Topics:    [][]common.Hash{{topic}},
 	}
-	logs, err := client.FilterLogs(context.Background(), query)
+	logs, err := client.FilterLogs(ctx, query)
 	if err != nil {
 		return fmt.Errorf("error fetching logs: %w", err)
 	}
-	decimals := getUSDTDecimals(client, usdtABI, contractAddr)
+	decimals := getUSDTDecimals(ctx, client, usdtABI, contractAddr)
 	var txs []types.Log
 	for _, vLog := range logs {
 		if len(vLog.Topics) < 3 {
@@ -197,10 +197,10 @@ func (w *Wallet) LastTransactions(address string) error {
 	}
 	return nil
 }
-func (w *Wallet) TransactionStatus(txHash string) error {
+func (w *Wallet) TransactionStatus(ctx context.Context, txHash string) error {
 	client := w.client
 	hash := common.HexToHash(txHash)
-	receipt, err := client.TransactionReceipt(context.Background(), hash)
+	receipt, err := client.TransactionReceipt(ctx, hash)
 	if err != nil {
 		return fmt.Errorf("transaction not found or not yet mined")
 	}
@@ -208,7 +208,7 @@ func (w *Wallet) TransactionStatus(txHash string) error {
 	return nil
 }
 
-func (w *Wallet) SendUSDT(recipient string, amountString string) error {
+func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString string) error {
 	amount, err := strconv.ParseFloat(amountString, 64)
 	if err != nil {
 		return fmt.Errorf("invalid amount: %w", err)
@@ -241,11 +241,11 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) error {
 		return fmt.Errorf("invalid private key: %w", err)
 	}
 	fromAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
-	nonce, err := client.PendingNonceAt(context.Background(), fromAddr)
+	nonce, err := client.PendingNonceAt(ctx, fromAddr)
 	if err != nil {
 		return fmt.Errorf("error getting nonce: %w", err)
 	}
-	decimals := getUSDTDecimals(client, usdtABI, contractAddr)
+	decimals := getUSDTDecimals(ctx, client, usdtABI, contractAddr)
 	rawAmount := new(big.Float).Mul(big.NewFloat(amount), big.NewFloat(float64Pow(10, decimals)))
 	amt := new(big.Int)
 	rawAmount.Int(amt)
@@ -256,7 +256,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) error {
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Value = big.NewInt(0)
 	auth.GasLimit = uint64(100000)
-	gasPrice, _ := client.SuggestGasPrice(context.Background())
+	gasPrice, _ := client.SuggestGasPrice(ctx)
 	auth.GasPrice = gasPrice
 
 	input, err := usdtABI.Pack("transfer", common.HexToAddress(recipient), amt)
@@ -272,7 +272,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) error {
 		Value:    big.NewInt(0),
 		Data:     input,
 	}
-	gasEstimate, err := client.EstimateGas(context.Background(), msg)
+	gasEstimate, err := client.EstimateGas(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("error estimating gas: %w", err)
 	}
@@ -284,7 +284,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) error {
 	if err != nil {
 		return fmt.Errorf("error signing tx: %w", err)
 	}
-	err = client.SendTransaction(context.Background(), signedTx)
+	err = client.SendTransaction(ctx, signedTx)
 	if err != nil {
 		return fmt.Errorf("error sending tx: %w", err)
 	}

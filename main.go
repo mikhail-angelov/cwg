@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -11,6 +14,10 @@ func main() {
 		printHelp()
 		return
 	}
+
+	// Create a root context that listens for OS signals
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
 
 	cfg, err := LoadConfig("config.json")
 	if err != nil {
@@ -42,7 +49,7 @@ func main() {
 		if len(os.Args) > 2 {
 			address = os.Args[2]
 		}
-		if err := wallet.CheckBalance(address); err != nil {
+		if err := wallet.CheckBalance(ctx, address); err != nil {
 			fmt.Fprintf(os.Stderr, "Error checking balance: %v\n", err)
 			os.Exit(1)
 		}
@@ -51,7 +58,7 @@ func main() {
 		if len(os.Args) > 2 {
 			address = os.Args[2]
 		}
-		if err := wallet.LastTransactions(address); err != nil {
+		if err := wallet.LastTransactions(ctx, address); err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting transactions: %v\n", err)
 			os.Exit(1)
 		}
@@ -60,7 +67,7 @@ func main() {
 			fmt.Println("Usage: status <txHash>")
 			return
 		}
-		if err := wallet.TransactionStatus(os.Args[2]); err != nil {
+		if err := wallet.TransactionStatus(ctx, os.Args[2]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting status: %v\n", err)
 			os.Exit(1)
 		}
@@ -69,7 +76,7 @@ func main() {
 			fmt.Println("Usage: send <recipient> <amount>")
 			return
 		}
-		if err := wallet.SendUSDT(os.Args[2], os.Args[3]); err != nil {
+		if err := wallet.SendUSDT(ctx, os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error sending USDT: %v\n", err)
 			os.Exit(1)
 		}
