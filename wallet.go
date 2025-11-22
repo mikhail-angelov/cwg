@@ -1,7 +1,8 @@
 package main
 
 import (
-	"bufio"
+
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -227,18 +228,30 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) {
 		fmt.Println("Invalid amount:", err)
 		return
 	}
-	privKeyHex, err := decryptKey(w.cfg.WALLET_KEY)
+	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
 	if err != nil {
 		fmt.Println("Failed to decrypt:", err)
 		return
 	}
+	defer zeroBytes(privKeyBytes)
 
 	client := getClient(w.cfg.INFURA_API_KEY)
 	defer client.Close()
 	usdtABI := getUSDTABI()
 	usdtAddress := w.cfg.USDT_CONTRACT
 	contractAddr := common.HexToAddress(usdtAddress)
-	privateKey, err := crypto.HexToECDSA(strings.TrimPrefix(privKeyHex, "0x"))
+
+	// Decode hex key to raw bytes
+	trimmed := strip0x(privKeyBytes)
+	rawKey := make([]byte, hex.DecodedLen(len(trimmed)))
+	_, err = hex.Decode(rawKey, trimmed)
+	if err != nil {
+		fmt.Println("Invalid private key hex:", err)
+		return
+	}
+	defer zeroBytes(rawKey)
+
+	privateKey, err := crypto.ToECDSA(rawKey)
 	if err != nil {
 		fmt.Println("Invalid private key:", err)
 		return
@@ -307,23 +320,27 @@ func float64Pow(a float64, b int64) float64 {
 	return res
 }
 func EncryptKeyPrompt() {
-	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter PRIVATE KEY (hex): ")
-	privKey, _ := reader.ReadString('\n')
-	privKey = strings.TrimSpace(privKey)
+	// Use ReadPassword to hide input and get bytes directly
+	privKey, _ := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	defer zeroBytes(privKey)
+
+	// Trim whitespace/newlines if any (though ReadPassword usually just gets the chars)
+	privKey = bytes.TrimSpace(privKey)
 
 	fmt.Print("Enter password to encrypt PRIVATE KEY: ")
 	bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println()
-	password := string(bytePassword)
+	defer zeroBytes(bytePassword)
 
-	if privKey == "" || password == "" {
+	if len(privKey) == 0 || len(bytePassword) == 0 {
 		fmt.Println("Private key and password must not be empty.")
 		return
 	}
-	EncryptKey(privKey, password)
+	EncryptKey(privKey, bytePassword)
 }
-func EncryptKey(privKey, passphrase string) {
+func EncryptKey(privKey, passphrase []byte) {
 	salt := make([]byte, 16)
 	iv := make([]byte, 12)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
@@ -334,7 +351,7 @@ func EncryptKey(privKey, passphrase string) {
 		fmt.Println("Error generating iv:", err)
 		return
 	}
-	key, _ := scrypt.Key([]byte(passphrase), salt, 1<<15, 8, 1, 32)
+	key, _ := scrypt.Key(passphrase, salt, 1<<15, 8, 1, 32)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		fmt.Println("Error creating cipher:", err)
@@ -345,55 +362,73 @@ func EncryptKey(privKey, passphrase string) {
 		fmt.Println("Error creating GCM:", err)
 		return
 	}
-	ciphertext := aesgcm.Seal(nil, iv, []byte(privKey), nil)
+	ciphertext := aesgcm.Seal(nil, iv, privKey, nil)
 	out := fmt.Sprintf("%x:%x:%x:%x", salt, iv, aesgcm.Overhead(), ciphertext)
 	fmt.Println("Encrypted PRIVATE KEY: " + out)
 }
 
-func decryptKey(encryptedKey string) (string, error) {
-	fmt.Print("Enter password to encrypt PRIVATE KEY: ")
+func decryptKey(encryptedKey string) ([]byte, error) {
+	fmt.Print("Enter password to decrypt PRIVATE KEY: ")
 	bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
 	fmt.Println()
-	password := string(bytePassword)
+	defer zeroBytes(bytePassword)
+
 	parts := strings.Split(strings.TrimSpace(encryptedKey), ":")
 	if len(parts) != 4 {
-		return "", errors.New("priv key format invalid")
+		return nil, errors.New("priv key format invalid")
 	}
 	salt, err := hex.DecodeString(parts[0])
 	if err != nil {
-		return "", fmt.Errorf("error decoding salt: %w", err)
+		return nil, fmt.Errorf("error decoding salt: %w", err)
 	}
 	iv, err := hex.DecodeString(parts[1])
 	if err != nil {
-		return "", fmt.Errorf("error decoding iv: %w", err)
+		return nil, fmt.Errorf("error decoding iv: %w", err)
 	}
 	ciphertext, err := hex.DecodeString(parts[3])
 	if err != nil {
-		return "", fmt.Errorf("error decoding ciphertext: %w", err)
+		return nil, fmt.Errorf("error decoding ciphertext: %w", err)
 	}
-	key, err := scrypt.Key([]byte(password), salt, 1<<15, 8, 1, 32)
+	key, err := scrypt.Key(bytePassword, salt, 1<<15, 8, 1, 32)
 	if err != nil {
-		return "", fmt.Errorf("error deriving key: %w", err)
+		return nil, fmt.Errorf("error deriving key: %w", err)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", fmt.Errorf("error creating cipher: %w", err)
+		return nil, fmt.Errorf("error creating cipher: %w", err)
 	}
 	aesgcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("error creating GCM: %w", err)
+		return nil, fmt.Errorf("error creating GCM: %w", err)
 	}
 	plaintext, err := aesgcm.Open(nil, iv, ciphertext, nil)
 	if err != nil {
-		return "", fmt.Errorf("decryption failed: %w", err)
+		return nil, fmt.Errorf("decryption failed: %w", err)
 	}
-	return string(plaintext), nil
+	return plaintext, nil
 }
 
 func (w *Wallet) ShowInfo() {
-	privKeyHex, err := decryptKey(w.cfg.WALLET_KEY)
-	fmt.Println("key:", privKeyHex)
-	fmt.Println("key:", err)
+	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
+	if err == nil {
+		defer zeroBytes(privKeyBytes)
+		fmt.Println("key: [REDACTED FOR SECURITY]")
+	} else {
+		fmt.Println("key error:", err)
+	}
+}
+
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+func strip0x(b []byte) []byte {
+	if len(b) >= 2 && b[0] == '0' && (b[1] == 'x' || b[1] == 'X') {
+		return b[2:]
+	}
+	return b
 }
 
 func LoadConfig(path string) (*Config, error) {
