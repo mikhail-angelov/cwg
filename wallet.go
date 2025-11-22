@@ -34,18 +34,15 @@ const usdtABIPath = "./usdt-abi.json"
 
 
 type Wallet struct {
-	cfg *Config
+	cfg    *Config
+	client Client
 }
 
-func NewWallet(json string) (*Wallet, error) {
-	cfg, err := LoadConfig(json)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-	return &Wallet{cfg: cfg}, nil
+func NewWallet(cfg *Config, client Client) (*Wallet, error) {
+	return &Wallet{cfg: cfg, client: client}, nil
 }
 
-func getClient(key string) (*ethclient.Client, error) {
+func getClient(key string) (Client, error) {
 	providerURL := "https://mainnet.infura.io/v3/" + key
 	client, err := ethclient.Dial(providerURL)
 	if err != nil {
@@ -80,11 +77,7 @@ func (w *Wallet) CheckBalance(address string) error {
 		address = w.cfg.WALLET
 	}
 	fmt.Println("Balance for: ", address)
-	client, err := getClient(w.cfg.INFURA_API_KEY)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	client := w.client
 
 	if !common.IsHexAddress(address) {
 		return fmt.Errorf("invalid Ethereum address: %s", address)
@@ -126,7 +119,7 @@ func weiToEther(wei *big.Int) string {
 	return ethValue.Text('f', 6)
 }
 
-func getUSDTDecimals(client *ethclient.Client, usdtABI abi.ABI, contractAddr common.Address) int64 {
+func getUSDTDecimals(client Client, usdtABI abi.ABI, contractAddr common.Address) int64 {
 	data, _ := usdtABI.Pack("decimals")
 	callMsg := ethereum.CallMsg{To: &contractAddr, Data: data}
 	res, err := client.CallContract(context.Background(), callMsg, nil)
@@ -147,11 +140,7 @@ func formatTokenAmount(amount *big.Int, decimals int64) string {
 	return val.Text('f', 6)
 }
 func (w *Wallet) LastTransactions(address string) error {
-	client, err := getClient(w.cfg.INFURA_API_KEY)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	client := w.client
 	usdtABI, err := getUSDTABI()
 	if err != nil {
 		return err
@@ -209,11 +198,7 @@ func (w *Wallet) LastTransactions(address string) error {
 	return nil
 }
 func (w *Wallet) TransactionStatus(txHash string) error {
-	client, err := getClient(w.cfg.INFURA_API_KEY)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	client := w.client
 	hash := common.HexToHash(txHash)
 	receipt, err := client.TransactionReceipt(context.Background(), hash)
 	if err != nil {
@@ -234,11 +219,7 @@ func (w *Wallet) SendUSDT(recipient string, amountString string) error {
 	}
 	defer zeroBytes(privKeyBytes)
 
-	client, err := getClient(w.cfg.INFURA_API_KEY)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	client := w.client
 	usdtABI, err := getUSDTABI()
 	if err != nil {
 		return err

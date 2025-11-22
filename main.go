@@ -11,7 +11,21 @@ func main() {
 		printHelp()
 		return
 	}
-	wallet, err := NewWallet("config.json")
+
+	cfg, err := LoadConfig("config.json")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	client, err := getClient(cfg.INFURA_API_KEY)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing client: %v\n", err)
+		os.Exit(1)
+	}
+	defer client.Close()
+
+	wallet, err := NewWallet(cfg, client)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing wallet: %v\n", err)
 		os.Exit(1)
