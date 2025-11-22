@@ -8,7 +8,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
+
 	"errors"
 	"fmt"
 	"io"
@@ -31,13 +31,7 @@ import (
 
 const usdtABIPath = "./usdt-abi.json"
 
-type Config struct {
-	INFURA_API_KEY    string `json:"infura_api_key"`
-	ETHERSCAN_API_KEY string `json:"etherscan_api_key"`
-	USDT_CONTRACT     string `json:"usd_contract"`
-	WALLET            string `json:"wallet"`
-	WALLET_KEY        string `json:"wallet_key"`
-}
+
 
 type Wallet struct {
 	cfg *Config
@@ -435,17 +429,4 @@ func strip0x(b []byte) []byte {
 	return b
 }
 
-func LoadConfig(path string) (*Config, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
 
-	var cfg Config
-	decoder := json.NewDecoder(f)
-	if err := decoder.Decode(&cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
