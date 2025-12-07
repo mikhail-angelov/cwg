@@ -8,6 +8,9 @@ import (
 	"syscall"
 )
 
+// version is set during build via ldflags
+var version = "dev"
+
 func main() {
 	os.Exit(run())
 }
@@ -99,8 +102,8 @@ func run() int {
 }
 
 func printHelp() {
-	fmt.Println(`cw-go CLI
-	Usage:
+	fmt.Printf("cw-go CLI v%s\n", version)
+	fmt.Println(`	Usage:
 	  create                Create new wallet
 	  balance <address>     Check USDT and ETH balance
 	  last <address>        Show last 3 USDT transactions for an address
