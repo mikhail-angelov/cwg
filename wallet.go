@@ -386,7 +386,7 @@ func float64Pow(a float64, b int64) float64 {
 func EncryptKeyPrompt() {
 	fmt.Print("Enter PRIVATE KEY (hex): ")
 	// Use ReadPassword to hide input and get bytes directly
-	privKey, _ := term.ReadPassword(syscall.Stdin)
+	privKey, _ := term.ReadPassword(getStdinFD())
 	fmt.Println()
 	defer zeroBytes(privKey)
 
@@ -394,7 +394,7 @@ func EncryptKeyPrompt() {
 	privKey = bytes.TrimSpace(privKey)
 
 	fmt.Print("Enter password to encrypt PRIVATE KEY: ")
-	bytePassword, _ := term.ReadPassword(syscall.Stdin)
+	bytePassword, _ := term.ReadPassword(getStdinFD())
 	fmt.Println()
 	defer zeroBytes(bytePassword)
 
@@ -433,7 +433,7 @@ func EncryptKey(privKey, passphrase []byte) {
 
 func decryptKey(encryptedKey string) ([]byte, error) {
 	fmt.Print("Enter password to decrypt PRIVATE KEY: ")
-	bytePassword, _ := term.ReadPassword(syscall.Stdin)
+	bytePassword, _ := term.ReadPassword(getStdinFD())
 	fmt.Println()
 	defer zeroBytes(bytePassword)
 
@@ -493,4 +493,12 @@ func strip0x(b []byte) []byte {
 		return b[2:]
 	}
 	return b
+}
+
+// getStdinFD returns the file descriptor for stdin appropriate for the current platform
+func getStdinFD() int {
+	// On Windows, syscall.Stdin is uintptr, need to convert to int
+	// On Unix-like systems, syscall.Stdin is int
+	// nolint:unconvert // This conversion is necessary for Windows compatibility
+	return int(syscall.Stdin)
 }
