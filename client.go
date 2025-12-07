@@ -10,6 +10,7 @@ import (
 )
 
 // Client defines the interface for Ethereum interactions, matching methods from ethclient.Client
+// nolint:dupl // This interface is intentionally similar to MockClient for testing
 type Client interface {
 	BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error)
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)

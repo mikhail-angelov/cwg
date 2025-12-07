@@ -9,10 +9,13 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
 
+func run() int {
 	if len(os.Args) < 2 {
 		printHelp()
-		return
+		return 0
 	}
 
 	// Create a root context that listens for OS signals
@@ -22,27 +25,23 @@ func main() {
 	cfg, err := LoadConfig("config.json")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 
-	client, err := getClient(cfg.INFURA_API_KEY)
+	client, err := getClient(cfg.InfuraAPIKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing client: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
 	defer client.Close()
 
-	wallet, err := NewWallet(cfg, client)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error initializing wallet: %v\n", err)
-		os.Exit(1)
-	}
+	wallet := NewWallet(cfg, client)
 
 	switch os.Args[1] {
 	case "create":
 		if err := wallet.CreateWallet(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating wallet: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "balance":
 		address := ""
@@ -51,7 +50,7 @@ func main() {
 		}
 		if err := wallet.CheckBalance(ctx, address); err != nil {
 			fmt.Fprintf(os.Stderr, "Error checking balance: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "last":
 		address := ""
@@ -60,34 +59,34 @@ func main() {
 		}
 		if err := wallet.LastTransactions(ctx, address); err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting transactions: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "status":
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: status <txHash>")
-			return
+			return 1
 		}
 		if err := wallet.TransactionStatus(ctx, os.Args[2]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting status: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "send":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: send <recipient> <amount>")
-			return
+			return 1
 		}
 		if err := wallet.SendUSDT(ctx, os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error sending USDT: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "send-eth":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: send-eth <recipient> <amount>")
-			return
+			return 1
 		}
 		if err := wallet.SendETH(ctx, os.Args[2], os.Args[3]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error sending ETH: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 	case "encrypt-key":
 		EncryptKeyPrompt()
@@ -96,6 +95,7 @@ func main() {
 	default:
 		printHelp()
 	}
+	return 0
 }
 
 func printHelp() {

@@ -183,12 +183,14 @@ vet: ## Vet Go code
 
 .PHONY: lint
 lint: ## Lint Go code (requires golangci-lint)
-	@echo "Linting code..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "golangci-lint not installed, skipping lint"; \
+	@echo "Checking for golangci-lint..."
+	@GOLANGCI_LINT_PATH="$(shell go env GOPATH)/bin/golangci-lint"; \
+	if [ ! -f "$$GOLANGCI_LINT_PATH" ]; then \
+		echo "golangci-lint not found. curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin;"; \
+		exit 1; \
 	fi
+	@echo "Linting code..."
+	@$(shell go env GOPATH)/bin/golangci-lint run
 
 .PHONY: all
 all: deps test build ## Run deps, test, and build

@@ -32,12 +32,12 @@ func TestCheckBalance(t *testing.T) {
 	}
 
 	cfg := &Config{
-		WALLET:         "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-		INFURA_API_KEY: "test",
-		USDT_CONTRACT:  "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+		Wallet:       "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+		InfuraAPIKey: "test",
+		USDTContract: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
 	}
 
-	w, _ := NewWallet(cfg, mockClient)
+	w := NewWallet(cfg, mockClient)
 
 	// We need to capture stdout to verify output, but for now let's just ensure no error
 	// and we can rely on the fact that it calls the mock.
@@ -73,12 +73,12 @@ func TestLastTransactions(t *testing.T) {
 	}
 
 	cfg := &Config{
-		WALLET:         "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-		INFURA_API_KEY: "test",
-		USDT_CONTRACT:  "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+		Wallet:       "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+		InfuraAPIKey: "test",
+		USDTContract: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
 	}
 
-	w, _ := NewWallet(cfg, mockClient)
+	w := NewWallet(cfg, mockClient)
 
 	err := w.LastTransactions(context.Background(), "0x742d35Cc6634C0532925a3b844Bc454e4438f44e")
 	if err != nil {

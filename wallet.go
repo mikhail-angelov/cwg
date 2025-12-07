@@ -35,8 +35,8 @@ type Wallet struct {
 	client Client
 }
 
-func NewWallet(cfg *Config, client Client) (*Wallet, error) {
-	return &Wallet{cfg: cfg, client: client}, nil
+func NewWallet(cfg *Config, client Client) *Wallet {
+	return &Wallet{cfg: cfg, client: client}
 }
 
 func getClient(key string) (Client, error) {
@@ -71,7 +71,7 @@ func (w *Wallet) CreateWallet() error {
 }
 func (w *Wallet) CheckBalance(ctx context.Context, address string) error {
 	if address == "" {
-		address = w.cfg.WALLET
+		address = w.cfg.Wallet
 	}
 	fmt.Println("Balance for: ", address)
 	client := w.client
@@ -93,7 +93,7 @@ func (w *Wallet) CheckBalance(ctx context.Context, address string) error {
 	if err != nil {
 		return err
 	}
-	usdtAddress := w.cfg.USDT_CONTRACT
+	usdtAddress := w.cfg.USDTContract
 	contractAddr := common.HexToAddress(usdtAddress)
 	data, err := usdtABI.Pack("balanceOf", addr)
 	if err != nil {
@@ -130,7 +130,7 @@ func getUSDTDecimals(ctx context.Context, client Client, usdtABI abi.ABI, contra
 func formatTokenAmount(amount *big.Int, decimals int64) string {
 	f := new(big.Float).SetInt(amount)
 	div := new(big.Float).SetFloat64(float64(1))
-	for i := int64(0); i < decimals; i++ {
+	for range decimals {
 		div = new(big.Float).Mul(div, big.NewFloat(10))
 	}
 	val := new(big.Float).Quo(f, div)
@@ -142,7 +142,7 @@ func (w *Wallet) LastTransactions(ctx context.Context, address string) error {
 	if err != nil {
 		return err
 	}
-	usdtAddress := w.cfg.USDT_CONTRACT
+	usdtAddress := w.cfg.USDTContract
 	contractAddr := common.HexToAddress(usdtAddress)
 	addr := common.HexToAddress(address)
 
@@ -205,7 +205,7 @@ func (w *Wallet) TransactionStatus(ctx context.Context, txHash string) error {
 	return nil
 }
 
-func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString string) error {
+func (w *Wallet) SendUSDT(ctx context.Context, recipient, amountString string) error {
 	amount, err := strconv.ParseFloat(amountString, 64)
 	if err != nil {
 		return fmt.Errorf("invalid amount: %w", err)
@@ -214,7 +214,7 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString st
 	if !common.IsHexAddress(recipient) {
 		return fmt.Errorf("invalid Ethereum address: %s", recipient)
 	}
-	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
+	privKeyBytes, err := decryptKey(w.cfg.WalletKey)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt: %w", err)
 	}
@@ -225,7 +225,7 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString st
 	if err != nil {
 		return err
 	}
-	usdtAddress := w.cfg.USDT_CONTRACT
+	usdtAddress := w.cfg.USDTContract
 	contractAddr := common.HexToAddress(usdtAddress)
 
 	// Decode hex key to raw bytes
@@ -293,7 +293,7 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString st
 	return nil
 }
 
-func (w *Wallet) SendETH(ctx context.Context, recipient string, amountString string) error {
+func (w *Wallet) SendETH(ctx context.Context, recipient, amountString string) error {
 	amount, err := strconv.ParseFloat(amountString, 64)
 	if err != nil {
 		return fmt.Errorf("invalid amount: %w", err)
@@ -302,7 +302,7 @@ func (w *Wallet) SendETH(ctx context.Context, recipient string, amountString str
 	if !common.IsHexAddress(recipient) {
 		return fmt.Errorf("invalid Ethereum address: %s", recipient)
 	}
-	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
+	privKeyBytes, err := decryptKey(w.cfg.WalletKey)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt: %w", err)
 	}
@@ -378,7 +378,7 @@ func (w *Wallet) SendETH(ctx context.Context, recipient string, amountString str
 
 func float64Pow(a float64, b int64) float64 {
 	res := 1.0
-	for i := int64(0); i < b; i++ {
+	for range b {
 		res *= a
 	}
 	return res
@@ -386,7 +386,7 @@ func float64Pow(a float64, b int64) float64 {
 func EncryptKeyPrompt() {
 	fmt.Print("Enter PRIVATE KEY (hex): ")
 	// Use ReadPassword to hide input and get bytes directly
-	privKey, _ := term.ReadPassword(int(syscall.Stdin))
+	privKey, _ := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	defer zeroBytes(privKey)
 
@@ -394,7 +394,7 @@ func EncryptKeyPrompt() {
 	privKey = bytes.TrimSpace(privKey)
 
 	fmt.Print("Enter password to encrypt PRIVATE KEY: ")
-	bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
+	bytePassword, _ := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	defer zeroBytes(bytePassword)
 
@@ -433,7 +433,7 @@ func EncryptKey(privKey, passphrase []byte) {
 
 func decryptKey(encryptedKey string) ([]byte, error) {
 	fmt.Print("Enter password to decrypt PRIVATE KEY: ")
-	bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
+	bytePassword, _ := term.ReadPassword(syscall.Stdin)
 	fmt.Println()
 	defer zeroBytes(bytePassword)
 
@@ -473,7 +473,7 @@ func decryptKey(encryptedKey string) ([]byte, error) {
 }
 
 func (w *Wallet) ShowInfo() {
-	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
+	privKeyBytes, err := decryptKey(w.cfg.WalletKey)
 	if err == nil {
 		defer zeroBytes(privKeyBytes)
 		fmt.Println("key: [REDACTED FOR SECURITY]")
