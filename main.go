@@ -80,6 +80,15 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error sending USDT: %v\n", err)
 			os.Exit(1)
 		}
+	case "send-eth":
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: send-eth <recipient> <amount>")
+			return
+		}
+		if err := wallet.SendETH(ctx, os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error sending ETH: %v\n", err)
+			os.Exit(1)
+		}
 	case "encrypt-key":
 		EncryptKeyPrompt()
 	case "info":
@@ -97,6 +106,7 @@ func printHelp() {
 	  last <address>        Show last 3 USDT transactions for an address
 	  status <txHash>       Show status of a transaction by hash
 	  send <recipient> <amount>  Send USDT to an account
-	  info             Show app info
+	  send-eth <recipient> <amount>  Send ETH to an account
+	  info                  Show app info
 	`)
 }

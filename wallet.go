@@ -213,6 +213,10 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString st
 	if err != nil {
 		return fmt.Errorf("invalid amount: %w", err)
 	}
+	// Validate recipient address
+	if !common.IsHexAddress(recipient) {
+		return fmt.Errorf("invalid Ethereum address: %s", recipient)
+	}
 	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
 	if err != nil {
 		return fmt.Errorf("failed to decrypt: %w", err)
@@ -291,6 +295,90 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient string, amountString st
 	fmt.Printf("Transaction sent! Tx Hash: %s\n", signedTx.Hash().Hex())
 	return nil
 }
+
+func (w *Wallet) SendETH(ctx context.Context, recipient string, amountString string) error {
+	amount, err := strconv.ParseFloat(amountString, 64)
+	if err != nil {
+		return fmt.Errorf("invalid amount: %w", err)
+	}
+	// Validate recipient address
+	if !common.IsHexAddress(recipient) {
+		return fmt.Errorf("invalid Ethereum address: %s", recipient)
+	}
+	privKeyBytes, err := decryptKey(w.cfg.WALLET_KEY)
+	if err != nil {
+		return fmt.Errorf("failed to decrypt: %w", err)
+	}
+	defer zeroBytes(privKeyBytes)
+
+	client := w.client
+
+	// Decode hex key to raw bytes
+	trimmed := strip0x(privKeyBytes)
+	rawKey := make([]byte, hex.DecodedLen(len(trimmed)))
+	_, err = hex.Decode(rawKey, trimmed)
+	if err != nil {
+		return fmt.Errorf("invalid private key hex: %w", err)
+	}
+	defer zeroBytes(rawKey)
+
+	privateKey, err := crypto.ToECDSA(rawKey)
+	if err != nil {
+		return fmt.Errorf("invalid private key: %w", err)
+	}
+	fromAddr := crypto.PubkeyToAddress(privateKey.PublicKey)
+	nonce, err := client.PendingNonceAt(ctx, fromAddr)
+	if err != nil {
+		return fmt.Errorf("error getting nonce: %w", err)
+	}
+
+	// Convert ETH to wei (1 ETH = 10^18 wei)
+	ethToWei := new(big.Float).Mul(big.NewFloat(amount), big.NewFloat(1e18))
+	value := new(big.Int)
+	ethToWei.Int(value)
+
+	gasPrice, err := client.SuggestGasPrice(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting gas price: %w", err)
+	}
+
+	// Estimate gas for simple ETH transfer
+	toAddr := common.HexToAddress(recipient)
+	msg := ethereum.CallMsg{
+		From:     fromAddr,
+		To:       &toAddr,
+		Gas:      0,
+		GasPrice: gasPrice,
+		Value:    value,
+		Data:     nil,
+	}
+	gasEstimate, err := client.EstimateGas(ctx, msg)
+	if err != nil {
+		// If estimation fails, use a safe default for ETH transfers (21000 gas)
+		gasEstimate = 21000
+	}
+	fmt.Printf("Estimated Gas: %d\n", gasEstimate)
+
+	// Create transaction
+	tx := types.NewTransaction(nonce, toAddr, value, gasEstimate, gasPrice, nil)
+
+	// Sign transaction
+	chainID := big.NewInt(1) // Mainnet
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
+	if err != nil {
+		return fmt.Errorf("error signing transaction: %w", err)
+	}
+
+	// Send transaction
+	err = client.SendTransaction(ctx, signedTx)
+	if err != nil {
+		return fmt.Errorf("error sending transaction: %w", err)
+	}
+
+	fmt.Printf("ETH Transaction sent! Tx Hash: %s\n", signedTx.Hash().Hex())
+	return nil
+}
+
 func float64Pow(a float64, b int64) float64 {
 	res := 1.0
 	for i := int64(0); i < b; i++ {
@@ -409,5 +497,3 @@ func strip0x(b []byte) []byte {
 	}
 	return b
 }
-
-
