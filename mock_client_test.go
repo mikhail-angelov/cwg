@@ -10,16 +10,16 @@ import (
 )
 
 type MockClient struct {
-	BalanceAtFunc        func(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error)
-	CallContractFunc     func(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
-	BlockNumberFunc      func(ctx context.Context) (uint64, error)
-	FilterLogsFunc       func(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	BalanceAtFunc          func(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error)
+	CallContractFunc       func(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
+	BlockNumberFunc        func(ctx context.Context) (uint64, error)
+	FilterLogsFunc         func(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
 	TransactionReceiptFunc func(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
-	PendingNonceAtFunc   func(ctx context.Context, account common.Address) (uint64, error)
-	SuggestGasPriceFunc  func(ctx context.Context) (*big.Int, error)
-	EstimateGasFunc      func(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
-	SendTransactionFunc  func(ctx context.Context, tx *types.Transaction) error
-	CloseFunc            func()
+	PendingNonceAtFunc     func(ctx context.Context, account common.Address) (uint64, error)
+	SuggestGasPriceFunc    func(ctx context.Context) (*big.Int, error)
+	EstimateGasFunc        func(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
+	SendTransactionFunc    func(ctx context.Context, tx *types.Transaction) error
+	CloseFunc              func()
 }
 
 func (m *MockClient) BalanceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {

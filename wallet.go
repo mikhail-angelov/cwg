@@ -1,7 +1,6 @@
 package main
 
 import (
-
 	"bytes"
 	"context"
 	"crypto/aes"
@@ -30,8 +29,6 @@ import (
 )
 
 const usdtABIPath = "./usdt-abi.json"
-
-
 
 type Wallet struct {
 	cfg    *Config
