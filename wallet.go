@@ -158,7 +158,7 @@ func (w *Wallet) LastTransactions(ctx context.Context, address string) error {
 	}
 	fromBlock := big.NewInt(0)
 	if latestBlock > 5000 {
-		fromBlock = big.NewInt(int64(latestBlock - 5000))
+		fromBlock = new(big.Int).SetUint64(latestBlock - 5000)
 	}
 	// Transfer event signature
 	event := usdtABI.Events["Transfer"]
@@ -256,7 +256,7 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient, amountString string) e
 	amt := new(big.Int)
 	rawAmount.Int(amt)
 	auth := bind.NewKeyedTransactor(privateKey, big.NewInt(1))
-	auth.Nonce = big.NewInt(int64(nonce))
+	auth.Nonce = new(big.Int).SetUint64(nonce)
 	auth.Value = big.NewInt(0)
 	auth.GasLimit = uint64(100000)
 	gasPrice, err := client.SuggestGasPrice(ctx)
