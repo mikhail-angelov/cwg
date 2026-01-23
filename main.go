@@ -30,6 +30,10 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
 		return 1
 	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
+		return 1
+	}
 
 	client, err := getClient(cfg.InfuraAPIKey)
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type Config struct {
@@ -14,6 +16,23 @@ type Config struct {
 	USDTContract    string `json:"usd_contract"`
 	Wallet          string `json:"wallet"`
 	WalletKey       string `json:"wallet_key"`
+}
+
+// Validate checks that required configuration fields are present and valid.
+func (c *Config) Validate() error {
+	if c.InfuraAPIKey == "" {
+		return fmt.Errorf("infura_api_key is required")
+	}
+	if c.USDTContract == "" {
+		return fmt.Errorf("usd_contract is required")
+	}
+	if !common.IsHexAddress(c.USDTContract) {
+		return fmt.Errorf("invalid USDT contract address: %s", c.USDTContract)
+	}
+	if c.Wallet != "" && !common.IsHexAddress(c.Wallet) {
+		return fmt.Errorf("invalid wallet address: %s", c.Wallet)
+	}
+	return nil
 }
 
 func LoadConfig(path string) (*Config, error) {

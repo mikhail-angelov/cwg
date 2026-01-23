@@ -117,10 +117,15 @@ func weiToEther(wei *big.Int) string {
 }
 
 func getUSDTDecimals(ctx context.Context, client Client, usdtABI abi.ABI, contractAddr common.Address) int64 {
-	data, _ := usdtABI.Pack("decimals")
+	data, err := usdtABI.Pack("decimals")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to pack decimals call: %v\n", err)
+		return 6 // fallback
+	}
 	callMsg := ethereum.CallMsg{To: &contractAddr, Data: data}
 	res, err := client.CallContract(ctx, callMsg, nil)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to get USDT decimals, using default 6: %v\n", err)
 		return 6 // fallback
 	}
 	dec := new(big.Int).SetBytes(res)
@@ -251,13 +256,13 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient, amountString string) e
 	amt := new(big.Int)
 	rawAmount.Int(amt)
 	auth := bind.NewKeyedTransactor(privateKey, big.NewInt(1))
-	if err != nil {
-		return fmt.Errorf("error creating transactor: %w", err)
-	}
 	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Value = big.NewInt(0)
 	auth.GasLimit = uint64(100000)
-	gasPrice, _ := client.SuggestGasPrice(ctx)
+	gasPrice, err := client.SuggestGasPrice(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting gas price: %w", err)
+	}
 	auth.GasPrice = gasPrice
 
 	input, err := usdtABI.Pack("transfer", common.HexToAddress(recipient), amt)
