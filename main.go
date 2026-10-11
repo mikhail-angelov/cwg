@@ -83,7 +83,7 @@ func run() int {
 			return 1
 		}
 		if err := wallet.CancelTransaction(ctx, os.Args[2]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error cancelling transaction: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error canceling transaction: %v\n", err)
 			return 1
 		}
 	case "send":

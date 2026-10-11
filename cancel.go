@@ -41,7 +41,7 @@ func (w *Wallet) CancelTransaction(ctx context.Context, txHash string) error {
 		return fmt.Errorf("error finding transaction: %w", err)
 	}
 	if !pending {
-		return fmt.Errorf("transaction is already mined and cannot be cancelled")
+		return fmt.Errorf("transaction is already mined and cannot be canceled")
 	}
 	if original.Type() > types.DynamicFeeTxType {
 		return fmt.Errorf("unsupported transaction type: %d", original.Type())
@@ -68,9 +68,9 @@ func (w *Wallet) CancelTransaction(ctx context.Context, txHash string) error {
 	}
 	var replacement *types.Transaction
 	if original.Type() == types.DynamicFeeTxType {
-		currentCap, tipCap, err := w.suggestedDynamicFees(ctx)
-		if err != nil {
-			return err
+		currentCap, tipCap, feeErr := w.suggestedDynamicFees(ctx)
+		if feeErr != nil {
+			return feeErr
 		}
 		bumpedTip := cancellationGasPrice(original.GasTipCap())
 		if tipCap.Cmp(bumpedTip) < 0 {
@@ -98,8 +98,8 @@ func (w *Wallet) CancelTransaction(ctx context.Context, txHash string) error {
 	trimmed := strip0x(keyBytes)
 	rawKey := make([]byte, hex.DecodedLen(len(trimmed)))
 	defer zeroBytes(rawKey)
-	if _, err := hex.Decode(rawKey, trimmed); err != nil {
-		return fmt.Errorf("invalid private key hex: %w", err)
+	if _, decodeErr := hex.Decode(rawKey, trimmed); decodeErr != nil {
+		return fmt.Errorf("invalid private key hex: %w", decodeErr)
 	}
 	privateKey, err := crypto.ToECDSA(rawKey)
 	if err != nil {

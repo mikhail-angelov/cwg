@@ -116,7 +116,7 @@ func weiToEther(wei *big.Int) string {
 	return ethValue.Text('f', 6)
 }
 
-func (w *Wallet) suggestedDynamicFees(ctx context.Context) (*big.Int, *big.Int, error) {
+func (w *Wallet) suggestedDynamicFees(ctx context.Context) (feeCap, tip *big.Int, err error) {
 	header, err := w.client.HeaderByNumber(ctx, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting latest block: %w", err)
@@ -124,7 +124,7 @@ func (w *Wallet) suggestedDynamicFees(ctx context.Context) (*big.Int, *big.Int, 
 	if header == nil || header.BaseFee == nil {
 		return nil, nil, fmt.Errorf("latest block has no EIP-1559 base fee")
 	}
-	tip, err := w.client.SuggestGasTipCap(ctx)
+	tip, err = w.client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error getting priority fee: %w", err)
 	}
@@ -133,7 +133,7 @@ func (w *Wallet) suggestedDynamicFees(ctx context.Context) (*big.Int, *big.Int, 
 	if tip.Cmp(big.NewInt(10_000_000)) < 0 {
 		tip.SetInt64(10_000_000)
 	}
-	feeCap := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+	feeCap = new(big.Int).Mul(header.BaseFee, big.NewInt(2))
 	feeCap.Add(feeCap, tip)
 	return feeCap, tip, nil
 }
