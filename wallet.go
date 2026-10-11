@@ -13,13 +13,13 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -116,6 +116,36 @@ func weiToEther(wei *big.Int) string {
 	return ethValue.Text('f', 6)
 }
 
+func (w *Wallet) suggestedDynamicFees(ctx context.Context) (*big.Int, *big.Int, error) {
+	header, err := w.client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting latest block: %w", err)
+	}
+	if header == nil || header.BaseFee == nil {
+		return nil, nil, fmt.Errorf("latest block has no EIP-1559 base fee")
+	}
+	tip, err := w.client.SuggestGasTipCap(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error getting priority fee: %w", err)
+	}
+	// 0.01 Gwei minimum prevents a near-zero RPC suggestion from removing priority.
+	tip = new(big.Int).Set(tip)
+	if tip.Cmp(big.NewInt(10_000_000)) < 0 {
+		tip.SetInt64(10_000_000)
+	}
+	feeCap := new(big.Int).Mul(header.BaseFee, big.NewInt(2))
+	feeCap.Add(feeCap, tip)
+	return feeCap, tip, nil
+}
+
+func printGasCost(gasLimit uint64, gasPrice *big.Int) {
+	priceGwei := new(big.Rat).SetFrac(gasPrice, big.NewInt(1_000_000_000))
+	maxFee := new(big.Int).Mul(new(big.Int).SetUint64(gasLimit), gasPrice)
+	feeETH := new(big.Rat).SetFrac(maxFee, big.NewInt(1_000_000_000_000_000_000))
+	fmt.Printf("Gas limit: %d gas\nGas price (max): %s Gwei\nMaximum gas fee: %s ETH\n",
+		gasLimit, priceGwei.FloatString(9), feeETH.FloatString(18))
+}
+
 func getUSDTDecimals(ctx context.Context, client Client, usdtABI abi.ABI, contractAddr common.Address) int64 {
 	data, err := usdtABI.Pack("decimals")
 	if err != nil {
@@ -142,16 +172,20 @@ func formatTokenAmount(amount *big.Int, decimals int64) string {
 	return val.Text('f', 6)
 }
 func (w *Wallet) LastTransactions(ctx context.Context, address string) error {
+	if address == "" {
+		address = w.cfg.Wallet
+	}
+	if !common.IsHexAddress(address) {
+		return fmt.Errorf("invalid Ethereum address: %s", address)
+	}
 	client := w.client
 	usdtABI, err := getUSDTABI()
 	if err != nil {
 		return err
 	}
-	usdtAddress := w.cfg.USDTContract
-	contractAddr := common.HexToAddress(usdtAddress)
+	contractAddr := common.HexToAddress(w.cfg.USDTContract)
 	addr := common.HexToAddress(address)
 
-	// Get latest block
 	latestBlock, err := client.BlockNumber(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting latest block: %w", err)
@@ -160,53 +194,93 @@ func (w *Wallet) LastTransactions(ctx context.Context, address string) error {
 	if latestBlock > 5000 {
 		fromBlock = new(big.Int).SetUint64(latestBlock - 5000)
 	}
-	// Transfer event signature
-	event := usdtABI.Events["Transfer"]
-	topic := event.ID
-
-	query := ethereum.FilterQuery{
-		FromBlock: fromBlock,
-		ToBlock:   nil,
-		Addresses: []common.Address{contractAddr},
-		Topics:    [][]common.Hash{{topic}},
+	transferTopic := usdtABI.Events["Transfer"].ID
+	addressTopic := common.BytesToHash(addr.Bytes())
+	// Indexed topics filter outgoing and incoming transfers at the node.
+	filters := [][][]common.Hash{
+		{{transferTopic}, {addressTopic}},
+		{{transferTopic}, nil, {addressTopic}},
 	}
-	logs, err := client.FilterLogs(ctx, query)
-	if err != nil {
-		return fmt.Errorf("error fetching logs: %w", err)
-	}
-	decimals := getUSDTDecimals(ctx, client, usdtABI, contractAddr)
 	var txs []types.Log
-	for _, vLog := range logs {
-		if len(vLog.Topics) < 3 {
-			continue
+	for _, topics := range filters {
+		logs, err := client.FilterLogs(ctx, ethereum.FilterQuery{
+			FromBlock: fromBlock,
+			ToBlock:   new(big.Int).SetUint64(latestBlock),
+			Addresses: []common.Address{contractAddr},
+			Topics:    topics,
+		})
+		if err != nil {
+			return fmt.Errorf("error fetching logs: %w", err)
 		}
-		from := common.HexToAddress(vLog.Topics[1].Hex())
-		to := common.HexToAddress(vLog.Topics[2].Hex())
-		if from == addr || to == addr {
-			txs = append(txs, vLog)
+		for _, log := range logs {
+			if len(log.Topics) >= 3 && !log.Removed {
+				txs = append(txs, log)
+			}
 		}
 	}
-	n := len(txs)
-	if n == 0 {
-		fmt.Println("No recent USDT transactions found for this address.")
+	sort.Slice(txs, func(i, j int) bool {
+		if txs[i].BlockNumber != txs[j].BlockNumber {
+			return txs[i].BlockNumber > txs[j].BlockNumber
+		}
+		return txs[i].Index > txs[j].Index
+	})
+	if len(txs) == 0 {
+		fmt.Println("No USDT transactions found for this address in the last 5000 blocks.")
 		return nil
 	}
-	for i := n - 1; i >= 0 && i >= n-3; i-- {
-		tx := txs[i]
+	decimals := getUSDTDecimals(ctx, client, usdtABI, contractAddr)
+	seen := make(map[common.Hash]bool)
+	count := 0
+	for _, tx := range txs {
+		if seen[tx.TxHash] {
+			continue
+		}
+		seen[tx.TxHash] = true
+		receipt, err := client.TransactionReceipt(ctx, tx.TxHash)
+		if err != nil {
+			return fmt.Errorf("error getting receipt for %s: %w", tx.TxHash.Hex(), err)
+		}
+		status := "Failed"
+		if receipt.Status == types.ReceiptStatusSuccessful {
+			status = "Success"
+		}
+		count++
 		val := new(big.Int).SetBytes(tx.Data)
-		fmt.Printf("#%d: Hash: %s\n  From: %s\n  To: %s\n  Value: %s USDT\n  Block: %d\n",
-			n-i, tx.TxHash.Hex(), tx.Topics[1].Hex(), tx.Topics[2].Hex(), formatTokenAmount(val, decimals), tx.BlockNumber)
+		fmt.Printf("#%d: Hash: %s\n  From: %s\n  To: %s\n  Value: %s USDT\n  Block: %d\n  Status: %s\n",
+			count, tx.TxHash.Hex(), common.BytesToAddress(tx.Topics[1].Bytes()).Hex(),
+			common.BytesToAddress(tx.Topics[2].Bytes()).Hex(), formatTokenAmount(val, decimals), tx.BlockNumber, status)
+		if count == 3 {
+			break
+		}
 	}
 	return nil
 }
 func (w *Wallet) TransactionStatus(ctx context.Context, txHash string) error {
-	client := w.client
-	hash := common.HexToHash(txHash)
-	receipt, err := client.TransactionReceipt(ctx, hash)
+	hash, err := parseTransactionHash(txHash)
 	if err != nil {
-		return fmt.Errorf("transaction not found or not yet mined")
+		return err
 	}
-	fmt.Printf("Status: %v\nBlock: %d\nGas Used: %d\n", receipt.Status == 1, receipt.BlockNumber.Uint64(), receipt.GasUsed)
+	receipt, err := w.client.TransactionReceipt(ctx, hash)
+	if errors.Is(err, ethereum.NotFound) {
+		_, pending, lookupErr := w.client.TransactionByHash(ctx, hash)
+		if lookupErr != nil {
+			return fmt.Errorf("error finding transaction: %w", lookupErr)
+		}
+		if pending {
+			fmt.Println("Status: Pending")
+		} else {
+			fmt.Println("Status: Awaiting receipt")
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("error getting receipt: %w", err)
+	}
+	status := "Failed"
+	if receipt.Status == types.ReceiptStatusSuccessful {
+		status = "Success"
+	}
+	fmt.Printf("Status: %s\nBlock: %d\nGas Used: %d\n", status, receipt.BlockNumber.Uint64(), receipt.GasUsed)
 	return nil
 }
 
@@ -255,15 +329,10 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient, amountString string) e
 	rawAmount := new(big.Float).Mul(big.NewFloat(amount), big.NewFloat(float64Pow(10, decimals)))
 	amt := new(big.Int)
 	rawAmount.Int(amt)
-	auth := bind.NewKeyedTransactor(privateKey, big.NewInt(1))
-	auth.Nonce = new(big.Int).SetUint64(nonce)
-	auth.Value = big.NewInt(0)
-	auth.GasLimit = uint64(100000)
-	gasPrice, err := client.SuggestGasPrice(ctx)
+	feeCap, tipCap, err := w.suggestedDynamicFees(ctx)
 	if err != nil {
-		return fmt.Errorf("error getting gas price: %w", err)
+		return err
 	}
-	auth.GasPrice = gasPrice
 
 	input, err := usdtABI.Pack("transfer", common.HexToAddress(recipient), amt)
 	if err != nil {
@@ -271,22 +340,27 @@ func (w *Wallet) SendUSDT(ctx context.Context, recipient, amountString string) e
 	}
 	// Estimate gas
 	msg := ethereum.CallMsg{
-		From:     fromAddr,
-		To:       &contractAddr,
-		Gas:      0,
-		GasPrice: gasPrice,
-		Value:    big.NewInt(0),
-		Data:     input,
+		From:      fromAddr,
+		To:        &contractAddr,
+		Gas:       0,
+		GasFeeCap: feeCap,
+		GasTipCap: tipCap,
+		Value:     big.NewInt(0),
+		Data:      input,
 	}
 	gasEstimate, err := client.EstimateGas(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("error estimating gas: %w", err)
 	}
-	fmt.Printf("Estimated Gas: %d\n", gasEstimate)
-	auth.GasLimit = gasEstimate
+	printGasCost(gasEstimate, feeCap)
+	fmt.Printf("Priority fee: %s Gwei\n", new(big.Rat).SetFrac(tipCap, big.NewInt(1_000_000_000)).FloatString(9))
 
-	tx := types.NewTransaction(nonce, contractAddr, big.NewInt(0), auth.GasLimit, auth.GasPrice, input)
-	signedTx, err := auth.Signer(fromAddr, tx)
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID: big.NewInt(1), Nonce: nonce, To: &contractAddr,
+		Value: big.NewInt(0), Gas: gasEstimate,
+		GasFeeCap: feeCap, GasTipCap: tipCap, Data: input,
+	})
+	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(big.NewInt(1)), privateKey)
 	if err != nil {
 		return fmt.Errorf("error signing tx: %w", err)
 	}
@@ -339,34 +413,38 @@ func (w *Wallet) SendETH(ctx context.Context, recipient, amountString string) er
 	value := new(big.Int)
 	ethToWei.Int(value)
 
-	gasPrice, err := client.SuggestGasPrice(ctx)
+	feeCap, tipCap, err := w.suggestedDynamicFees(ctx)
 	if err != nil {
-		return fmt.Errorf("error getting gas price: %w", err)
+		return err
 	}
 
 	// Estimate gas for simple ETH transfer
 	toAddr := common.HexToAddress(recipient)
 	msg := ethereum.CallMsg{
-		From:     fromAddr,
-		To:       &toAddr,
-		Gas:      0,
-		GasPrice: gasPrice,
-		Value:    value,
-		Data:     nil,
+		From:      fromAddr,
+		To:        &toAddr,
+		Gas:       0,
+		GasFeeCap: feeCap,
+		GasTipCap: tipCap,
+		Value:     value,
+		Data:      nil,
 	}
 	gasEstimate, err := client.EstimateGas(ctx, msg)
 	if err != nil {
-		// If estimation fails, use a safe default for ETH transfers (21000 gas)
-		gasEstimate = 21000
+		return fmt.Errorf("error estimating gas: %w", err)
 	}
-	fmt.Printf("Estimated Gas: %d\n", gasEstimate)
+	printGasCost(gasEstimate, feeCap)
+	fmt.Printf("Priority fee: %s Gwei\n", new(big.Rat).SetFrac(tipCap, big.NewInt(1_000_000_000)).FloatString(9))
 
 	// Create transaction
-	tx := types.NewTransaction(nonce, toAddr, value, gasEstimate, gasPrice, nil)
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID: big.NewInt(1), Nonce: nonce, To: &toAddr,
+		Value: value, Gas: gasEstimate, GasFeeCap: feeCap, GasTipCap: tipCap,
+	})
 
 	// Sign transaction
 	chainID := big.NewInt(1) // Mainnet
-	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
+	signedTx, err := types.SignTx(tx, types.LatestSignerForChainID(chainID), privateKey)
 	if err != nil {
 		return fmt.Errorf("error signing transaction: %w", err)
 	}

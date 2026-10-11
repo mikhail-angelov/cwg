@@ -77,6 +77,15 @@ func run() int {
 			fmt.Fprintf(os.Stderr, "Error getting status: %v\n", err)
 			return 1
 		}
+	case "cancel":
+		if len(os.Args) != 3 {
+			fmt.Println("Usage: cancel <txHash>")
+			return 1
+		}
+		if err := wallet.CancelTransaction(ctx, os.Args[2]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error cancelling transaction: %v\n", err)
+			return 1
+		}
 	case "send":
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: send <recipient> <amount>")
@@ -110,8 +119,9 @@ func printHelp() {
 	fmt.Println(`	Usage:
 	  create                Create new wallet
 	  balance <address>     Check USDT and ETH balance
-	  last <address>        Show last 3 USDT transactions for an address
+	  last [address]        Show last 3 recent USDT transactions with status (default: configured wallet)
 	  status <txHash>       Show status of a transaction by hash
+	  cancel <txHash>       Replace a pending transaction with a zero ETH transfer to yourself
 	  send <recipient> <amount>  Send USDT to an account
 	  send-eth <recipient> <amount>  Send ETH to an account
 	  info                  Show app info

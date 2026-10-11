@@ -11,7 +11,7 @@ Features include wallet creation, balance checking, transaction history, USDT tr
 
 - **Create a new Ethereum wallet**
 - **Check ETH and USDT balances**
-- **Show last 3 USDT transactions for an address**
+- **Show last 3 recent USDT transactions with status**
 - **Send USDT to any Ethereum address**
 - **Check transaction status**
 - **Encrypt and decrypt private keys securely**
@@ -73,6 +73,10 @@ Features include wallet creation, balance checking, transaction history, USDT tr
 go run main.go <command> [args...]
 ```
 
+New ETH and USDT transfers use EIP-1559: the maximum gas price is twice the latest base fee plus the RPC-suggested priority fee (at least 0.01 Gwei). The actual fee depends on the base fee in the mined block and gas consumed. This does not change already pending transactions.
+
+Sending and cancelling transactions use the same fee display: gas limit in gas units, maximum gas price in Gwei, and maximum network fee in ETH (gas limit × maximum gas price).
+
 ### Commands
 
 - `create`
@@ -81,11 +85,14 @@ go run main.go <command> [args...]
 - `balance <address>`
   Show ETH and USDT balances for the address (uses default if omitted).
 
-- `last <address>`
-  Show last 3 USDT transactions for the address.
+- `last [address]`
+  Show the last 3 distinct USDT transactions in the last 5000 blocks, newest first, with receipt status (`Success` or `Failed`). Uses the configured wallet if the address is omitted. Incoming and outgoing transfers are filtered by address at the RPC node. Pending and reverted transfers have no Transfer logs and are not included; use `status <txHash>` to check a known transaction.
 
 - `status <txHash>`
-  Show status of a transaction by hash.
+  Show `Pending`, `Success`, or `Failed` for a transaction by hash.
+
+- `cancel <txHash>`
+  Attempt to cancel a pending transaction from your wallet by sending 0 ETH to yourself with the same nonce. Gas prices are raised by at least 25% and the fee cap is at least the current suggested gas price. Supports legacy, access-list, and EIP-1559 transactions on Ethereum mainnet. Prints the maximum gas fee before the password prompt and the replacement hash after sending. Cancellation is effective only when the replacement is mined first; check its hash with `status`. Gas is paid in ETH.
 
 - `send <recipient> <amount>`
   Send USDT to a recipient address.
@@ -112,7 +119,8 @@ go run main.go <command> [args...]
 
 - **Show last 3 USDT transactions**
   ```sh
-  go run main.go last 0xYourAddress
+  ./cwg last
+  ./cwg last 0xYourAddress
   ```
 
 - **Send USDT**

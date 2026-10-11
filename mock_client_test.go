@@ -14,8 +14,11 @@ type MockClient struct {
 	CallContractFunc       func(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 	BlockNumberFunc        func(ctx context.Context) (uint64, error)
 	FilterLogsFunc         func(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	TransactionByHashFunc  func(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
 	TransactionReceiptFunc func(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 	PendingNonceAtFunc     func(ctx context.Context, account common.Address) (uint64, error)
+	HeaderByNumberFunc     func(ctx context.Context, number *big.Int) (*types.Header, error)
+	SuggestGasTipCapFunc   func(ctx context.Context) (*big.Int, error)
 	SuggestGasPriceFunc    func(ctx context.Context) (*big.Int, error)
 	EstimateGasFunc        func(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
 	SendTransactionFunc    func(ctx context.Context, tx *types.Transaction) error
@@ -50,6 +53,13 @@ func (m *MockClient) FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]
 	return nil, nil
 }
 
+func (m *MockClient) TransactionByHash(ctx context.Context, hash common.Hash) (*types.Transaction, bool, error) {
+	if m.TransactionByHashFunc != nil {
+		return m.TransactionByHashFunc(ctx, hash)
+	}
+	return nil, false, ethereum.NotFound
+}
+
 func (m *MockClient) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
 	if m.TransactionReceiptFunc != nil {
 		return m.TransactionReceiptFunc(ctx, txHash)
@@ -62,6 +72,20 @@ func (m *MockClient) PendingNonceAt(ctx context.Context, account common.Address)
 		return m.PendingNonceAtFunc(ctx, account)
 	}
 	return 0, nil
+}
+
+func (m *MockClient) HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error) {
+	if m.HeaderByNumberFunc != nil {
+		return m.HeaderByNumberFunc(ctx, number)
+	}
+	return &types.Header{BaseFee: big.NewInt(1_000_000_000)}, nil
+}
+
+func (m *MockClient) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	if m.SuggestGasTipCapFunc != nil {
+		return m.SuggestGasTipCapFunc(ctx)
+	}
+	return big.NewInt(10_000_000), nil
 }
 
 func (m *MockClient) SuggestGasPrice(ctx context.Context) (*big.Int, error) {

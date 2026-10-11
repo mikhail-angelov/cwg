@@ -49,6 +49,9 @@ func TestCheckBalance(t *testing.T) {
 
 func TestLastTransactions(t *testing.T) {
 	mockClient := &MockClient{
+		TransactionReceiptFunc: func(ctx context.Context, hash common.Hash) (*types.Receipt, error) {
+			return &types.Receipt{Status: types.ReceiptStatusSuccessful}, nil
+		},
 		BlockNumberFunc: func(ctx context.Context) (uint64, error) {
 			return 10000, nil
 		},

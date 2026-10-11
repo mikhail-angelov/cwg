@@ -16,8 +16,11 @@ type Client interface {
 	CallContract(ctx context.Context, msg ethereum.CallMsg, blockNumber *big.Int) ([]byte, error)
 	BlockNumber(ctx context.Context) (uint64, error)
 	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 	PendingNonceAt(ctx context.Context, account common.Address) (uint64, error)
+	HeaderByNumber(ctx context.Context, number *big.Int) (*types.Header, error)
+	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 	SuggestGasPrice(ctx context.Context) (*big.Int, error)
 	EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error)
 	SendTransaction(ctx context.Context, tx *types.Transaction) error
